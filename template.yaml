@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  micolet-notification-service
+
+
+Globals:
+  Function:
+    LoggingConfig:
+      LogFormat: JSON
+Resources:
+  MicoletNotificationService:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: A Lambda function that fetches new items on micolet.pt and notifies the subscribed users
+      Runtime: nodejs20.x
+      Architectures:
+      - x86_64
+      Handler: src\app.lambdaHandler
+      Events:
+        CloudWatchEvent:
+          Type: Schedule
+          Properties:
+            Schedule: rate(15 minutes)
+      MemorySize: 256
+      Timeout: 150
+    Metadata: # Manage esbuild properties
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2020
+        Sourcemap: true #true
+        EntryPoints:
+        - src\app.ts
