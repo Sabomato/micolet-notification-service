@@ -1,11 +1,20 @@
 import axios, { AxiosRequestConfig } from 'axios';
 
 export class NotificationManager {
-    private static url = 'https://ntfy.sh/';
-    private static defaultNewItemsTopic = 'new_items_topic_default12£$ssal1231';
-    private static defaultErrorTopic = 'error_topic_default12£$ssal1231';
+    private url = 'https://ntfy.sh/';
+    private defaultNewItemsTopic = 'new_items_topic_default12£$ssal1231';
+    private defaultErrorTopic = 'error_topic_default12£$ssal1231';
 
-    static sendNotification(message: string, topic: string = this.defaultNewItemsTopic): void {
+    private static INSTANCE: NotificationManager;
+
+    static {
+        this.INSTANCE = new NotificationManager();
+    }
+
+    public static getInstance(): NotificationManager {
+        return this.INSTANCE;
+    }
+    public sendNotification(message: string, topic: string = this.defaultNewItemsTopic): void {
         const config: AxiosRequestConfig = {
             headers: { Tags: 'eyes' },
         };
@@ -14,7 +23,7 @@ export class NotificationManager {
         });
     }
 
-    static sendErrorNotification(message: string, topic: string = this.defaultErrorTopic): void {
+    public sendErrorNotification(message: string, topic: string = this.defaultErrorTopic): void {
         const config: AxiosRequestConfig = {
             headers: { Tags: 'warning' },
         };

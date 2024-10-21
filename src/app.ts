@@ -1,31 +1,31 @@
 import { Context, Handler } from 'aws-lambda';
 import { NotificationManager } from './NotificationManager.js';
-import axios from 'axios';
+import axios, { AxiosResponse } from 'axios';
 import * as cheerio from 'cheerio';
 import { DynamoDBDocument, NativeAttributeValue, ScanCommandInput, UpdateCommandInput } from '@aws-sdk/lib-dynamodb';
 import { DynamoDB } from '@aws-sdk/client-dynamodb';
 import { AxiosRequestConfig } from 'axios';
 import { ErrorHandler } from './ErrorHandler.js';
-/**
- *
- * Event doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html#api-gateway-simple-proxy-for-lambda-input-format
- * @param {Object} event - API Gateway Lambda Proxy Input Format
- *
- * Return doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html
- * @returns {Object} object - API Gateway Lambda Proxy Output Format
- *
- */
+import { error } from 'console';
+
 const TABLE_NAME = 'MicoletNotificationServiceTable';
 const USER_ATTRIBUTE_NAME = 'user'; // if refactored, refactor updateUser aswell
 const USERID_ATTRIBUTE_NAME = 'userID'; // if refactored, refactor updateUser aswell
+/**
+ * Maximum number of pages to crawl per url.
+ * This is necesssary to prevent the crawling to get stuck on an url with a big number of pages due to limited Free AWS Lambda resources.
+ * In a future improvement, each item could have a "last check timestamp" and be checked from lowest to biggest.
+ */
 const MAX_NUM_PAGES = 15;
 const dynamo = DynamoDBDocument.from(new DynamoDB());
-const errorTopic = 'ErrorTopicGoFixIt:(';
+
 export const lambdaHandler: Handler = async (event: string, context: Context) => {
+    ErrorHandler.getInstance().awsRequestId = context.awsRequestId;
     const users = await getUsers();
-    if (users instanceof Error || typeof users == undefined) {
+    if (typeof users == undefined) {
         return false;
     }
+
     const updatedUsers = await process(users as IUser[]);
     dynamo.destroy();
     return true;
@@ -53,11 +53,15 @@ async function getUsers(): Promise<IUser[] | undefined> {
     };
     const result = await dynamo.scan(params);
     if (!isSuccessCode(result.$metadata.httpStatusCode)) {
-        ErrorHandler.throwError('Error getting users', result.$metadata.requestId, result.$metadata.httpStatusCode);
+        ErrorHandler.getInstance().throwError(
+            'Error getting users',
+            result.$metadata.httpStatusCode,
+            result.$metadata.requestId,
+        );
         return undefined;
     }
     users = result.Items?.flatMap((value: Record<string, NativeAttributeValue>) => {
-        const userInfo = JSON.parse(value[USER_ATTRIBUTE_NAME]); //TODO: make this dynamic
+        const userInfo = JSON.parse(value[USER_ATTRIBUTE_NAME]);
         const user = { userID: value[USERID_ATTRIBUTE_NAME], ...userInfo }; //TODO: make this dynamic
 
         return user;
@@ -74,7 +78,6 @@ async function updateUser(user: IUser): Promise<number> {
         },
         UpdateExpression: `set ${USER_ATTRIBUTE_VAR_NAME} = :x`,
         ExpressionAttributeValues: {
-            //TODO: make this dynamic
             ':x': JSON.stringify({
                 name: user.name,
                 topic: user.topic,
@@ -87,10 +90,10 @@ async function updateUser(user: IUser): Promise<number> {
     };
     const result = await dynamo.update(params);
     if (!isSuccessCode(result.$metadata.httpStatusCode)) {
-        ErrorHandler.handleError(
+        ErrorHandler.getInstance().handleError(
             `Error updating user ${user.name}`,
-            result.$metadata.requestId,
             result.$metadata.httpStatusCode,
+            result.$metadata.requestId,
         );
     }
     return result.$metadata.httpStatusCode as number;
@@ -100,25 +103,33 @@ async function findNumberOfWantedItems(item: IItem, config: AxiosRequestConfig<a
     let j = 1;
     let numberOfItems = 0;
     config.url = item.url;
-    //add support for multiple pages
+
     console.log(`Checking link ${item.url}`);
-    const response = await axios.request(config);
-    const selector = cheerio.load(response.data);
-    const newItems = selector("[class='']").has('.mt5.thumb-add-to-cart');
+    let response: AxiosResponse = await axios.request(config).catch((error) => {
+        return error;
+    });
+    if (!isSuccessCode(response.status)) {
+        ErrorHandler.getInstance().handleError(`Error fetching ${item.url}`, response.status);
+        return -1;
+    }
+    let selector = cheerio.load(response.data);
+    let newItems = selector("[class='']").has('.mt5.thumb-add-to-cart');
     numberOfItems = newItems.length;
     if (newItems.length == 0) {
         return numberOfItems;
     }
-    //could be improved by checking if there's any unavailable items in the page
 
+    //could be improved by checking if there's any unavailable items in the page
+    //preventing checking the next page
     while (j < MAX_NUM_PAGES) {
         config.url = item.url + `&page=${++j}`;
-        //add support for multiple pages
-        const response = await axios.request(config);
-        //console.log(response.data)
-
-        const selector = cheerio.load(response.data);
-        const newItems = selector("[class='']").has('.mt5.thumb-add-to-cart');
+        response = await axios.request(config);
+        if (!isSuccessCode(response.status)) {
+            ErrorHandler.getInstance().handleError(`Error fetching ${config.url}`, response.status);
+            return -1;
+        }
+        selector = cheerio.load(response.data);
+        newItems = selector("[class='']").has('.mt5.thumb-add-to-cart');
         if (newItems.length == 0) {
             break;
         }
@@ -156,15 +167,17 @@ async function process(users: IUser[]): Promise<IUser[]> {
         for (let i = 0; i < user.items.length; i++) {
             const item = user.items[i];
             const numberOfItems = await findNumberOfWantedItems(item, config);
+            if (numberOfItems == -1) {
+                continue;
+            }
             console.log(`Number of previous items=${item.lastNumberOfItems}\nCurrent number of items=${numberOfItems}`);
             if (numberOfItems > item.lastNumberOfItems && item.lastNumberOfItems > -1) {
                 const message = `New ${item.name} arrived! Check it out at ${item.url}`;
                 console.log(`Sending notification "${message}" to user ${user.name}`);
-                NotificationManager.sendNotification(message);
+                NotificationManager.getInstance().sendNotification(message);
             }
             user.items[i].lastNumberOfItems = numberOfItems;
         }
-
         updateUser(user);
     }
     return users;
