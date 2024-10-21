@@ -1,7 +1,7 @@
 {
   "name": "micolet_notification_service",
   "version": "1.0.0",
-  "description": "This project is a simple scraper that fetches new pre-defined product urls in micolet.pt and notifies the user via ntfy.sh",
+  "description": "This project is a simple crawler that fetches new pre-defined product urls in micolet.pt and notifies the user via ntfy.sh",
   "main": "app.js",
   "repository": "",
   "author": "João Silva",
