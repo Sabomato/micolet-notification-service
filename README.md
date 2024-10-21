@@ -1,8 +1,8 @@
 # micolet-notification-service
 
-This project is a simple crawler that fetches new pre-defined product urls in micolet.pt and notifies the user via ntfy.sh.
+This project is a simple service that crawls predefined paths in micolet.pt and notifies the user when new products arrive via ntfy.sh.
 
-It is currently deployed on AWS free tier as a lambda function, but can be easily decoupled from it to be locally deploy (with Docker, for example).
+It is currently deployed on AWS free tier as a lambda function with the data layer on AWS dynamo, but it can be easily decoupled to be locally deploy (with Docker, for example).
 
 It is in a initial phase so a lot of aspects could be improved, such as:
 - [x] Improve error handling
