@@ -2,8 +2,8 @@ import axios, { AxiosRequestConfig } from 'axios';
 
 export class NotificationManager {
     private url = 'https://ntfy.sh/';
-    private defaultNewItemsTopic = 'new_items_topic_default12£$ssal1231';
-    private defaultErrorTopic = 'error_topic_default12£$ssal1231';
+    private defaultNewItemsTopic = process.env["DEFAULT_NEW_ITEMS_TOPIC"] as string
+    private defaultErrorTopic = process.env["DEFAULT_ERROR_TOPIC"] as string
 
     private static INSTANCE: NotificationManager;
 
